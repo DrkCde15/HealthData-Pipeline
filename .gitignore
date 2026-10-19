@@ -1,0 +1,22 @@
+# Data
+data/
+*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Temp
+*.tmp
+*.zip

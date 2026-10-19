@@ -1,0 +1,5 @@
+requests>=2.28
+pandas>=1.5
+pyarrow>=10.0
+pysus>=2.11
+typing_extensions>=4.16
