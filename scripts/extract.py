@@ -69,12 +69,28 @@ except (ImportError, ModuleNotFoundError):
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Base directory is the project root (parent of the scripts/ folder)
-try:
-    BASE_DIR = Path(__file__).resolve().parent.parent
-except NameError:
-    # Fallback when __file__ is not defined (e.g. Databricks file runner)
-    BASE_DIR = Path("/Workspace/Users/jcesarsantana215@gmail.com/HealthData-Pipeline")
+def _find_base_dir() -> Path:
+    """Localiza a raiz do projeto (HealthData-Pipeline) sem hardcode de usuario."""
+    marker = Path("scripts") / "extract.py"
+    # 1. Execucao direta do arquivo: scripts/.. e a raiz
+    try:
+        p = Path(__file__).resolve().parent.parent
+        if (p / marker).is_file():
+            return p
+    except NameError:
+        pass
+    # 2. Sobe a partir do diretorio atual procurando a pasta do projeto
+    #    (funciona de qualquer subdiretorio do workspace do usuario, sem
+    #    precisar saber o email — o projeto e filho de um ancestral do cwd)
+    for cand in [Path.cwd(), *Path.cwd().parents]:
+        if cand.name == "HealthData-Pipeline" and (cand / marker).is_file():
+            return cand
+        proj = cand / "HealthData-Pipeline"
+        if (proj / marker).is_file():
+            return proj
+    raise RuntimeError("Nao foi possivel localizar a raiz do projeto HealthData-Pipeline")
+
+BASE_DIR = _find_base_dir()
 DATA_DIR = BASE_DIR / "data"
 
 # --- API endpoints ---------------------------------------------------------

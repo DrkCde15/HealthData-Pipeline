@@ -26,12 +26,19 @@ HealthData-Pipeline/
 ├── README.md
 ├── requirements.txt
 ├── scripts/
-│   └── extract.py          # Script de extração
-└── data/                    # Dados extraídos (Parquet) — ignorado pelo Git
-    ├── ibge_localidades/    # Estados e municípios
-    ├── ibge_sidra/          # População estimada
-    ├── sim/                 # Mortalidade
-    └── cnes/                # Estabelecimentos de saúde
+│   ├── extract.py          # Extração: fontes -> data/ (Parquet bruto)
+│   └── transform.py        # Validação e limpeza: data/ -> data_delta/ (Delta Lake)
+├── data/                    # Dados brutos (Parquet) — ignorado pelo Git
+│   ├── ibge_localidades/    # Estados e municípios
+│   ├── ibge_sidra/          # População estimada
+│   ├── sim/                 # Mortalidade
+│   └── cnes/                # Estabelecimentos de saúde
+└── data_delta/              # Delta Lakes validados e limpos — ignorado pelo Git
+    ├── dim_estados/         # 27 UFs
+    ├── dim_municipios/      # 5.571 municípios (colunas renomeadas)
+    ├── populacao_uf/        # População por UF (2022)
+    ├── mortalidade/         # 1.47M óbitos, 27 UFs combinadas
+    └── estabelecimentos/    # 680 estabelecimentos CNES
 ```
 
 ## Uso
@@ -40,8 +47,11 @@ HealthData-Pipeline/
 # Instalar dependências
 pip install -r requirements.txt
 
-# Executar extração
+# 1. Extração: fontes -> data/ (Parquet bruto)
 python scripts/extract.py
+
+# 2. Validação e limpeza: data/ -> data_delta/ (Delta Lake)
+python scripts/transform.py
 ```
 
 O script baixa os dados de todas as fontes e salva cada uma em sua respectiva subpasta como arquivos Parquet:
@@ -50,3 +60,14 @@ O script baixa os dados de todas as fontes e salva cada uma em sua respectiva su
 * **SIM e CNES** — via `pysus.ftp` (FTP do DataSUS), iterando sobre as 27 UFs
 
 O script auto-instala `pysus` e `typing_extensions>=4.16` se necessário.
+
+## Transform (Validação e Limpeza)
+
+O `transform.py` lê os Parquets brutos de `data/`, aplica validações (se alguma falha, a tabela não é gravada) e limpezas, gravando cada fonte como um Delta Lake em `data_delta/`:
+
+* **dim_estados / dim_municipios** — colunas renomeadas (sem pontos/hífens), IDs tipados como Int64
+* **populacao_uf** — schema renomeado (D1C→uf_codigo, D1N→uf_nome, V→populacao)
+* **mortalidade** — 27 UFs combinadas; datas DDMMYYYY→datetime; IDADE decodificada em `idade_tipo`/`idade_valor`/`idade_anos` (codificação validada empiricamente contra DTNASC: 4XX=anos, 3XX=meses, 2XX=dias, 1XX=horas, 0XX=minutos, 5XX=100+ anos); SEXO→descrição; códigos de município tipados
+* **estabelecimentos** — 21 UFs combinadas; CNES/CODUFMUN tipados como Int64; COMPETEN→date
+
+Nota técnica: o Delta é gravado via `deltalake` (delta-rs) em diretório temporário e copiado para `data_delta/` — o rename não é permitido no FUSE mount do `/Workspace`.
