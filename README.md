@@ -27,18 +27,24 @@ HealthData-Pipeline/
 ├── requirements.txt
 ├── scripts/
 │   ├── extract.py          # Extração: fontes -> data/ (Parquet bruto)
-│   └── transform.py        # Validação e limpeza: data/ -> data_delta/ (Delta Lake)
+│   ├── transform.py        # Validação e limpeza: data/ -> data_delta/ (Delta silver)
+│   └── analytics.py        # Agregações: silver -> data_delta/ (Delta gold)
 ├── data/                    # Dados brutos (Parquet) — ignorado pelo Git
 │   ├── ibge_localidades/    # Estados e municípios
 │   ├── ibge_sidra/          # População estimada
 │   ├── sim/                 # Mortalidade
 │   └── cnes/                # Estabelecimentos de saúde
-└── data_delta/              # Delta Lakes validados e limpos — ignorado pelo Git
-    ├── dim_estados/         # 27 UFs
-    ├── dim_municipios/      # 5.571 municípios (colunas renomeadas)
-    ├── populacao_uf/        # População por UF (2022)
-    ├── mortalidade/         # 1.47M óbitos, 27 UFs combinadas
-    └── estabelecimentos/    # 680 estabelecimentos CNES
+└── data_delta/              # Delta Lakes — ignorado pelo Git
+    ├── dim_estados/         # [silver] 27 UFs
+    ├── dim_municipios/      # [silver] 5.571 municípios (colunas renomeadas)
+    ├── populacao_uf/        # [silver] População por UF (2022)
+    ├── mortalidade/         # [silver] 1.47M óbitos, 27 UFs combinadas
+    ├── estabelecimentos/    # [silver] 680 estabelecimentos CNES
+    ├── obitos_uf_mes/       # [gold] Óbitos por UF x mês (324 rows)
+    ├── taxa_mortalidade_uf/ # [gold] Taxa bruta por 100k hab. (27 rows)
+    ├── obitos_capitulo_cid10/   # [gold] Óbitos por UF x capítulo CID-10
+    ├── obitos_causa_cid10/  # [gold] Óbitos por causa exata (fonte do top 10)
+    └── obitos_faixa_etaria/ # [gold] Óbitos por UF x sexo x faixa etária
 ```
 
 ## Uso
@@ -50,8 +56,11 @@ pip install -r requirements.txt
 # 1. Extração: fontes -> data/ (Parquet bruto)
 python scripts/extract.py
 
-# 2. Validação e limpeza: data/ -> data_delta/ (Delta Lake)
+# 2. Validação e limpeza: data/ -> data_delta/ (Delta silver)
 python scripts/transform.py
+
+# 3. Agregações analíticas: silver -> gold
+python scripts/analytics.py
 ```
 
 O script baixa os dados de todas as fontes e salva cada uma em sua respectiva subpasta como arquivos Parquet:
@@ -71,3 +80,19 @@ O `transform.py` lê os Parquets brutos de `data/`, aplica validações (se algu
 * **estabelecimentos** — 21 UFs combinadas; CNES/CODUFMUN tipados como Int64; COMPETEN→date
 
 Nota técnica: o Delta é gravado via `deltalake` (delta-rs) em diretório temporário e copiado para `data_delta/` — o rename não é permitido no FUSE mount do `/Workspace`.
+
+## Analytics (Camada Gold)
+
+O `analytics.py` lê os Deltas silver e grava 5 tabelas gold agregadas (todas validadas: soma de óbitos == 1.465.610, 27 UFs, 12 meses):
+
+* **obitos_uf_mes** — óbitos por UF x mês, com nome e região
+* **taxa_mortalidade_uf** — óbitos + população + taxa bruta por 100k hab. (pop. 2022 x óbitos 2023, aproximada)
+* **obitos_capitulo_cid10** — óbitos por UF x capítulo CID-10 (mapeamento letra+2 dígitos → 22 capítulos)
+* **obitos_causa_cid10** — óbitos por causa básica exata, nacional, ordenado (fonte do top 10)
+* **obitos_faixa_etaria** — óbitos por UF x sexo x faixa etária (padrão DATASUS, 18 faixas + ignorado)
+
+Destaques 2023: I219 (infarto) é a maior causa isolada (6,3%); capítulo IX (circulatório) lidera com 26,5%; RJ tem a maior taxa bruta (904/100k) e DF a menor (500/100k).
+
+## .gitignore
+
+A pasta `data/`, `data_delta/` e arquivos `*.parquet` são ignorados pelo Git. Os dados são gerados pelo script e não devem ser versionados.
